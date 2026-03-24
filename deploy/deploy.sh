@@ -124,36 +124,46 @@ fi
 # -----------------------------------------------------------------------------
 info "Paso 5/8 — Configurando variables de entorno..."
 
-if [ ! -f "$APP_DIR/.env" ]; then
+# Si ya existe un .env pero le faltan variables de producción, hay que recrearlo
+if [ -f "$APP_DIR/.env" ] && grep -q "<CAMBIAR" "$APP_DIR/.env"; then
+  warning "El .env existe pero aún tiene valores de ejemplo. Debes editarlo."
+fi
+
+# Si no existe el .env o tiene valores de ejemplo, crear uno desde la plantilla y pausar
+if [ ! -f "$APP_DIR/.env" ] || grep -q "<CAMBIAR" "$APP_DIR/.env"; then
   cp "$APP_DIR/deploy/.env.production.example" "$APP_DIR/.env"
   echo ""
   warning "======================================================="
   warning "  ACCION REQUERIDA — Configurar el archivo .env"
   warning "======================================================="
   warning "Se ha creado el archivo $APP_DIR/.env"
-  warning "Debes rellenar los valores antes de continuar:"
   warning ""
+  warning "Genera los secretos ejecutando estos comandos:"
+  warning "  openssl rand -base64 32   -> para AUTH_SECRET"
+  warning "  openssl rand -hex 32      -> para ENCRYPTION_KEY"
+  warning ""
+  warning "Luego edita el archivo con todos los valores:"
   warning "  nano $APP_DIR/.env"
   warning ""
   warning "Valores que DEBES cambiar:"
-  warning "  - POSTGRES_PASSWORD  (usa una contraseña segura)"
-  warning "  - AUTH_SECRET        (ejecuta: openssl rand -base64 32)"
-  warning "  - ENCRYPTION_KEY     (ejecuta: openssl rand -hex 32)"
-  warning "  - RESEND_API_KEY     (tu clave de resend.com)"
-  warning "  - EMAIL_FROM         (tu email de remitente)"
+  warning "  - POSTGRES_PASSWORD"
+  warning "  - AUTH_SECRET"
+  warning "  - ENCRYPTION_KEY"
+  warning "  - RESEND_API_KEY"
+  warning "  - EMAIL_FROM"
   warning ""
-  warning "Cuando termines de editar el .env, vuelve a ejecutar:"
+  warning "Cuando termines, vuelve a ejecutar:"
   warning "  bash ~/deploy.sh"
   warning "======================================================="
   exit 0
-else
-  info "Archivo .env encontrado, continuando..."
 fi
 
-# Verificar que los secretos críticos no sean los valores de ejemplo
+# Verificar que no queden valores de ejemplo sin rellenar
 if grep -q "<CAMBIAR" "$APP_DIR/.env"; then
-  error "El archivo .env aún tiene valores de ejemplo (<CAMBIAR...>). Edítalo antes de continuar."
+  error "El archivo .env aún tiene valores de ejemplo (<CAMBIAR...>). Edítalo antes de continuar: nano $APP_DIR/.env"
 fi
+
+info "Archivo .env configurado correctamente, continuando..."
 
 # -----------------------------------------------------------------------------
 # PASO 6 — Configurar Nginx
