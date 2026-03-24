@@ -15,8 +15,8 @@ services:
       test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-zasfood} -d ${POSTGRES_DB:-zasfood}"]
       interval: 10s
       timeout: 5s
-      retries: 5
-      start_period: 30s
+      retries: 10
+      start_period: 60s
 
   redis:
     image: redis:7-alpine
@@ -46,7 +46,8 @@ services:
       - ../.env
     environment:
       NODE_ENV: production
-      DATABASE_URL: postgresql://${POSTGRES_USER:-zasfood}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-zasfood}
+      # DATABASE_URL se lee directamente del .env — no se construye aquí
+      # para evitar problemas con caracteres especiales en la password
       REDIS_URL: redis://redis:6379
     ports:
       - "3000:3000"
