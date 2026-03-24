@@ -13,6 +13,10 @@ const loginSchema = z.object({
 })
 
 export const { handlers, signIn, signOut, auth } = NextAuth({
+  // Avoid UntrustedHost errors behind proxies / in Docker
+  trustHost: true,
+  secret: process.env.AUTH_SECRET,
+  debug: process.env.NODE_ENV !== "production",
   adapter: PrismaAdapter(prisma) as any,
   session: { strategy: "jwt" },
   pages: {
@@ -27,51 +31,56 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
         password: { label: "Password", type: "password" },
       },
       async authorize(credentials, request) {
-        const ip =
-          request?.headers?.get("x-forwarded-for")?.split(",")[0]?.trim() ??
-          "unknown"
-        const rl = await rateLimit({
-          key: `login:${ip}`,
-          limit: 10,
-          windowSeconds: 15 * 60,
-        })
-        if (!rl.ok) return null
-
-        const parsed = loginSchema.safeParse(credentials)
-        if (!parsed.success) return null
-
-        const { email, password } = parsed.data
-
-        const user = await prisma.user.findUnique({
-          where: { email },
-        })
-
-        if (!user) return null
-
-        const passwordMatch = await bcrypt.compare(password, user.passwordHash)
-        if (!passwordMatch) return null
-
-        // Resolve restaurantId and slug for non-superadmin users
-        let restaurantId: string | null = null
-        let restaurantSlug: string | null = null
-        if (user.role !== UserRole.SUPERADMIN) {
-          const membership = await prisma.membership.findFirst({
-            where: { userId: user.id },
-            include: { restaurant: true },
-            orderBy: { createdAt: "asc" },
+        try {
+          const ip =
+            request?.headers?.get("x-forwarded-for")?.split(",")[0]?.trim() ??
+            "unknown"
+          const rl = await rateLimit({
+            key: `login:${ip}`,
+            limit: 10,
+            windowSeconds: 15 * 60,
           })
-          restaurantId = membership?.restaurantId ?? null
-          restaurantSlug = membership?.restaurant?.slug ?? null
-        }
+          if (!rl.ok) return null
 
-        return {
-          id: user.id,
-          email: user.email,
-          name: user.name,
-          role: user.role,
-          restaurantId,
-          restaurantSlug,
-          isSuperadmin: user.role === UserRole.SUPERADMIN,
+          const parsed = loginSchema.safeParse(credentials)
+          if (!parsed.success) return null
+
+          const { email, password } = parsed.data
+
+          const user = await prisma.user.findUnique({
+            where: { email },
+          })
+
+          if (!user) return null
+
+          const passwordMatch = await bcrypt.compare(password, user.passwordHash)
+          if (!passwordMatch) return null
+
+          // Resolve restaurantId and slug for non-superadmin users
+          let restaurantId: string | null = null
+          let restaurantSlug: string | null = null
+          if (user.role !== UserRole.SUPERADMIN) {
+            const membership = await prisma.membership.findFirst({
+              where: { userId: user.id },
+              include: { restaurant: true },
+              orderBy: { createdAt: "asc" },
+            })
+            restaurantId = membership?.restaurantId ?? null
+            restaurantSlug = membership?.restaurant?.slug ?? null
+          }
+
+          return {
+            id: user.id,
+            email: user.email,
+            name: user.name,
+            role: user.role,
+            restaurantId,
+            restaurantSlug,
+            isSuperadmin: user.role === UserRole.SUPERADMIN,
+          }
+        } catch (err) {
+          console.error("[Auth] Credentials authorize failed:", err)
+          return null
         }
       },
     }),
