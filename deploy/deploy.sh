@@ -194,14 +194,14 @@ info "Paso 7/8 — Construyendo e iniciando los contenedores..."
 info "Este proceso puede tardar varios minutos la primera vez..."
 
 cd "$APP_DIR"
-docker compose -f deploy/docker-compose.prod.yml up --build -d
+docker compose -f deploy/docker-compose.prod.yml --env-file "$APP_DIR/.env" up --build -d
 
 info "Esperando a que la aplicación esté lista..."
-MAX_WAIT=120
+MAX_WAIT=180
 WAITED=0
 until curl -sf http://localhost:3000/api/health > /dev/null 2>&1; do
   if [ $WAITED -ge $MAX_WAIT ]; then
-    error "La aplicación no respondió en $MAX_WAIT segundos. Revisa los logs: docker compose -f deploy/docker-compose.prod.yml logs app"
+    error "La aplicación no respondió en $MAX_WAIT segundos. Revisa los logs: docker compose -f deploy/docker-compose.prod.yml --env-file $APP_DIR/.env logs app"
   fi
   sleep 5
   WAITED=$((WAITED + 5))
@@ -245,8 +245,8 @@ info "======================================================="
 info "  Despliegue completado"
 info "======================================================="
 info "  App corriendo en:    https://$DOMAIN"
-info "  Ver logs:            docker compose -f $APP_DIR/deploy/docker-compose.prod.yml logs -f app"
-info "  Estado contenedores: docker compose -f $APP_DIR/deploy/docker-compose.prod.yml ps"
+info "  Ver logs:            docker compose -f $APP_DIR/deploy/docker-compose.prod.yml --env-file $APP_DIR/.env logs -f app"
+info "  Estado contenedores: docker compose -f $APP_DIR/deploy/docker-compose.prod.yml --env-file $APP_DIR/.env ps"
 info "  Healthcheck:         curl https://$DOMAIN/api/health"
 info "  Actualizar:          bash $APP_DIR/deploy/update.sh"
 info "======================================================="
