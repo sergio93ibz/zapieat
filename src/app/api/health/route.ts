@@ -2,6 +2,9 @@ import { NextResponse } from "next/server"
 import { prisma } from "@/lib/prisma"
 import { redis } from "@/lib/redis"
 
+// Forzar ejecución dinámica — no ejecutar en build time
+export const dynamic = "force-dynamic"
+
 // GET /api/health
 export async function GET() {
   const startedAt = Date.now()

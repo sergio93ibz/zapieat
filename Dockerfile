@@ -13,8 +13,11 @@ COPY --from=deps /app/node_modules ./node_modules
 COPY . .
 
 ENV NODE_ENV=production
+# DATABASE_URL ficticia para que prisma generate y next build no fallen en build time.
+# La URL real se inyecta en tiempo de ejecución via docker-compose.
+ENV DATABASE_URL=postgresql://placeholder:placeholder@localhost:5432/placeholder
 RUN npx prisma generate
-RUN DEBUG=prisma* npm run build
+RUN npm run build
 
 FROM node:20-bookworm-slim AS runner
 WORKDIR /app
@@ -24,13 +27,14 @@ RUN apt-get update && apt-get install -y openssl && rm -rf /var/lib/apt/lists/*
 ENV NODE_ENV=production
 ENV PORT=3000
 
-COPY --from=build /app/package.json ./package.json
-COPY --from=build /app/node_modules ./node_modules
-COPY --from=build /app/next.config.ts ./next.config.ts
+# Con output: "standalone", Next.js genera una carpeta .next/standalone
+# que incluye solo lo necesario para producción
 COPY --from=build /app/public ./public
-COPY --from=build /app/.next ./.next
+COPY --from=build /app/.next/standalone ./
+COPY --from=build /app/.next/static ./.next/static
 COPY --from=build /app/prisma ./prisma
+COPY --from=build /app/node_modules/.prisma ./node_modules/.prisma
 
 EXPOSE 3000
 
-CMD ["npm", "run", "start"]
+CMD ["node", "server.js"]
