@@ -34,7 +34,10 @@ COPY --from=build /app/.next/standalone ./
 COPY --from=build /app/.next/static ./.next/static
 COPY --from=build /app/prisma ./prisma
 COPY --from=build /app/node_modules/.prisma ./node_modules/.prisma
+COPY --from=build /app/node_modules/prisma ./node_modules/prisma
+COPY --from=build /app/node_modules/@prisma ./node_modules/@prisma
 
 EXPOSE 3000
 
-CMD ["node", "server.js"]
+# Ejecutar prisma db push pasando DATABASE_URL directamente, luego arrancar la app
+CMD ["sh", "-c", "DATABASE_URL=$DATABASE_URL npx prisma db push --schema=prisma/schema.prisma && node server.js"]

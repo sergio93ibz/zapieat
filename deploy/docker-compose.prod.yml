@@ -48,8 +48,7 @@ services:
       - ../.env
     environment:
       NODE_ENV: production
-      # DATABASE_URL se lee directamente del .env — no se construye aquí
-      # para evitar problemas con caracteres especiales en la password
+      DATABASE_URL: ${DATABASE_URL}
       REDIS_URL: redis://redis:6379
     ports:
       - "3000:3000"
