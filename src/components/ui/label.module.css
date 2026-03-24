@@ -1,0 +1,18 @@
+.label {
+  font-size: var(--font-size-sm);
+  font-weight: 500;
+  line-height: 1;
+  color: var(--color-text);
+}
+
+.label.disabled {
+  cursor: not-allowed;
+  opacity: 0.7;
+}
+
+.error {
+  color: var(--color-danger);
+  font-size: var(--font-size-xs);
+  margin-top: var(--space-1);
+  display: block;
+}

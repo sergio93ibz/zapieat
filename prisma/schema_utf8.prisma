@@ -1,0 +1,689 @@
+﻿// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ZasFood â€” Prisma Schema
+// Database: PostgreSQL | Multi-tenant by restaurantId
+// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+
+generator client {
+  provider      = "prisma-client-js"
+  binaryTargets = ["native", "debian-openssl-3.0.x"]
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// â”€â”€â”€ ENUMS â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+
+enum UserRole {
+  SUPERADMIN
+  RESTAURANT_ADMIN
+  STAFF
+  CUSTOMER
+}
+
+enum RestaurantStatus {
+  PENDING
+  ACTIVE
+  SUSPENDED
+}
+
+enum MembershipRole {
+  RESTAURANT_ADMIN
+  STAFF
+}
+
+enum SubscriptionStatus {
+  ACTIVE
+  PAST_DUE
+  CANCELLED
+  TRIALING
+}
+
+enum OrderType {
+  DELIVERY
+  PICKUP
+  TABLE
+}
+
+enum OrderStatus {
+  PENDING_PAYMENT
+  PAID
+  PREPARING
+  READY
+  DELIVERING
+  DELIVERED
+  CANCELLED
+  REFUNDED
+}
+
+enum PaymentStatus {
+  PENDING
+  COMPLETED
+  FAILED
+  REFUNDED
+}
+
+enum PaymentProvider {
+  REDSYS
+  STRIPE
+  CASH
+}
+
+enum PaymentEnvironment {
+  SANDBOX
+  PRODUCTION
+}
+
+enum OrderAdjustmentStatus {
+  PENDING
+  SETTLED
+  CANCELLED
+}
+
+enum VerificationMethod {
+  DNS_TXT
+  DNS_CNAME
+}
+
+// â”€â”€â”€ GLOBAL TABLES â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+
+model Plan {
+  id          String   @id @default(cuid())
+  name        String
+  slug        String   @unique
+  price       Decimal  @db.Decimal(10, 2)
+  maxProducts Int      @default(50)
+  maxOrders   Int      @default(500)
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  subscriptions Subscription[]
+  restaurants   Restaurant[]
+
+  @@map("plans")
+}
+
+model User {
+  id           String   @id @default(cuid())
+  email        String   @unique
+  passwordHash String
+  name         String?
+  role         UserRole @default(CUSTOMER)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  memberships Membership[]
+  orderAdjustmentsCreated OrderAdjustment[] @relation("OrderAdjustmentsCreated")
+
+  @@map("users")
+}
+
+// â”€â”€â”€ MULTI-TENANT ROOT â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+
+model Restaurant {
+  id           String           @id @default(cuid())
+  slug         String           @unique
+  name         String
+  description  String?
+  logoUrl      String?
+  coverUrl     String?
+  phone        String?
+  address      String?
+  city         String?
+  postalCode   String?
+  country      String           @default("ES")
+  customDomain String?          @unique
+  status       RestaurantStatus @default(PENDING)
+  planId       String?
+  createdAt    DateTime         @default(now())
+  updatedAt    DateTime         @updatedAt
+
+  // Anti-Collapse / Smart Pause Feature
+  isPaused     Boolean          @default(false)
+  pausedUntil  DateTime?
+
+  // Loyalty Program
+  enableLoyalty Boolean          @default(false)
+  loyaltyPointsPerEuro Int       @default(1)    // e.g. 1 euro = 1 punto
+  loyaltyPointsValue Decimal     @default(0.05) // e.g. 1 punto = 0.05 euros
+  loyaltyMinPointsToRedeem Int   @default(100)  // Minimum points to use
+
+  // Global Happy Hour Schedule
+  happyHourActive    Boolean      @default(false)
+  happyHourStartTime String?
+  happyHourEndTime   String?
+  happyHourDays      Int[]
+
+  // Legal texts
+  legalNotice     String?  @db.Text
+  privacyPolicy   String?  @db.Text
+  cookiesPolicy   String?  @db.Text
+  termsConditions String?  @db.Text
+
+  plan          Plan?                      @relation(fields: [planId], references: [id])
+  domains       Domain[]
+  memberships   Membership[]
+  subscriptions Subscription[]
+
+  // Business relations
+  customers             Customer[]
+  categories            Category[]
+  products              Product[]
+  modifierGroups        ModifierGroup[]
+  modifiers             Modifier[]
+  orders                Order[]
+  deliveryZones         DeliveryZone[]
+  openingHours          OpeningHour[]
+  payments              Payment[]
+  reviews               Review[]
+  paymentSettings       RestaurantPaymentSettings?
+  orderAdjustments      OrderAdjustment[]
+  deliverySettings      RestaurantDeliverySettings?
+  holidays              RestaurantHoliday[]
+  tables                RestaurantTable[]
+  rooms                 Room[]
+  coupons               Coupon[]
+
+  @@map("restaurants")
+}
+
+model Domain {
+  id                 String              @id @default(cuid())
+  domain             String              @unique
+  restaurantId       String
+  isPrimary          Boolean             @default(false)
+  verified           Boolean             @default(false)
+  verificationToken  String              @default(cuid())
+  verificationMethod VerificationMethod  @default(DNS_TXT)
+  createdAt          DateTime            @default(now())
+  updatedAt          DateTime            @updatedAt
+
+  restaurant Restaurant @relation(fields: [restaurantId], references: [id], onDelete: Cascade)
+
+  @@index([restaurantId])
+  @@map("domains")
+}
+
+model Membership {
+  id           String         @id @default(cuid())
+  userId       String
+  restaurantId String
+  role         MembershipRole @default(STAFF)
+  createdAt    DateTime       @default(now())
+
+  user       User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  restaurant Restaurant @relation(fields: [restaurantId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, restaurantId])
+  @@index([restaurantId])
+  @@map("memberships")
+}
+
+model Subscription {
+  id           String             @id @default(cuid())
+  restaurantId String
+  planId       String
+  status       SubscriptionStatus @default(TRIALING)
+  currentPeriodStart DateTime
+  currentPeriodEnd   DateTime
+  cancelledAt        DateTime?
+  createdAt          DateTime     @default(now())
+  updatedAt          DateTime     @updatedAt
+
+  restaurant Restaurant @relation(fields: [restaurantId], references: [id], onDelete: Cascade)
+  plan       Plan       @relation(fields: [planId], references: [id])
+
+  @@index([restaurantId])
+  @@map("subscriptions")
+}
+
+// â”€â”€â”€ BUSINESS TABLES (all scoped by restaurantId) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+
+model Customer {
+  id           String    @id @default(cuid())
+  restaurantId String
+  email        String?
+  name         String?
+  phone        String?
+  passwordHash String?   // Opcional, para registro con contraseÃ±a
+  otpCode      String?   // Pare logueo via SMS
+  otpExpiresAt DateTime?
+  isRegistered Boolean   @default(false)
+  loyaltyPoints Int      @default(0) // Puntos acumulados
+  savedAddresses Json?   // Formato: [{ name: "Casa", address: "...", cp: "...", city: "..." }]
+  paymentMethods Json?   // Formato: [{ last4: "4242", brand: "visa", token: "tok_123" }]
+  lastOrderAt  DateTime?
+  notes        String?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  restaurant Restaurant @relation(fields: [restaurantId], references: [id], onDelete: Cascade)
+  orders     Order[]
+  reviews    Review[]
+
+  // Eliminamos el @@unique([restaurantId, email]) restrictivo porque un guest puede no tener email
+  // Usaremos findFirst en el backend en lugar de findUnique
+  @@index([restaurantId, email])
+  @@index([restaurantId, phone])
+  @@map("customers")
+}
+
+model Category {
+  id           String   @id @default(cuid())
+  restaurantId String
+  name         String
+  description  String?
+  imageUrl     String?
+  position     Int      @default(0)
+  isVisible    Boolean  @default(true)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  restaurant Restaurant @relation(fields: [restaurantId], references: [id], onDelete: Cascade)
+  products   Product[]
+
+  @@index([restaurantId])
+  @@map("categories")
+}
+
+model Product {
+  id                     String   @id @default(cuid())
+  restaurantId           String
+  categoryId             String
+  name                   String
+  description            String?
+  price                  Decimal  @db.Decimal(10, 2)
+  imageUrl               String?
+  isAvailable            Boolean  @default(true)
+  isSoldOut              Boolean  @default(false)
+  preparationTimeMinutes Int      @default(0)
+  allergens              String[] @default([])
+  isOffer                Boolean  @default(false)
+  offerPrice             Decimal? @db.Decimal(10, 2)
+  isCrossSell            Boolean  @default(false)
+  isCombo                Boolean  @default(false)
+  position               Int      @default(0)
+
+  // Marketing Badges
+  isRecommended          Boolean  @default(false)
+  isBestSeller           Boolean  @default(false)
+
+  // Happy Hour
+  happyHourEnabled       Boolean  @default(false)
+  happyHourDiscountType  DiscountType @default(PERCENTAGE)
+  happyHourDiscount      Decimal  @default(0.00)
+
+  createdAt              DateTime @default(now())
+  updatedAt              DateTime @updatedAt
+
+  restaurant             Restaurant      @relation(fields: [restaurantId], references: [id], onDelete: Cascade)
+  category               Category        @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+  modifierGroups         ModifierGroup[]
+  orderItems             OrderItem[]
+  linkedFromModifiers    Modifier[]      @relation("LinkedProduct")
+  couponsAsFreeProduct   Coupon[]        @relation("CouponFreeProduct")
+
+  @@index([restaurantId, categoryId])
+  @@map("products")
+}
+
+model ModifierGroup {
+  id           String   @id @default(cuid())
+  restaurantId String
+  productId    String
+  name         String
+  required     Boolean  @default(false)
+  minSelections Int     @default(0)
+  maxSelections Int     @default(1)
+  position     Int      @default(0)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  restaurant Restaurant @relation(fields: [restaurantId], references: [id], onDelete: Cascade)
+  product    Product    @relation(fields: [productId], references: [id], onDelete: Cascade)
+  modifiers  Modifier[]
+
+  @@index([restaurantId])
+  @@map("modifier_groups")
+}
+
+model Modifier {
+  id           String  @id @default(cuid())
+  groupId      String
+  restaurantId String
+  name         String
+  price        Decimal @db.Decimal(10, 2) @default(0)
+  isAvailable  Boolean @default(true)
+  position     Int     @default(0)
+
+  group            ModifierGroup       @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  restaurant       Restaurant          @relation(fields: [restaurantId], references: [id], onDelete: Cascade)
+  orderItemModifiers OrderItemModifier[]
+  linkedProduct    Product?            @relation("LinkedProduct", fields: [linkedProductId], references: [id])
+  linkedProductId  String?
+
+  @@index([restaurantId])
+  @@index([linkedProductId])
+  @@map("modifiers")
+}
+
+model Order {
+  id              String      @id @default(cuid())
+  restaurantId    String
+  customerId      String?
+  tableId         String?
+  orderNumber     Int
+  status          OrderStatus @default(PENDING_PAYMENT)
+  type            OrderType   @default(DELIVERY)
+
+  // Totals â€” stored at order time for analytics
+  subtotal        Decimal     @db.Decimal(10, 2)
+  deliveryFee     Decimal     @db.Decimal(10, 2) @default(0)
+  tax             Decimal     @db.Decimal(10, 2) @default(0)
+  total           Decimal     @db.Decimal(10, 2)
+
+  // Delivery
+  deliveryAddress String?
+  deliveryNotes   String?
+  isDelivery      Boolean     @default(true)
+
+  // Customer (can be guest)
+  customerName    String?
+  customerEmail   String?
+  customerPhone   String?
+
+  notes           String?
+  createdAt       DateTime    @default(now())
+  updatedAt       DateTime    @updatedAt
+
+  // Marketing / Loyalty / Coupons
+  couponId            String?
+  discountApplied     Decimal  @db.Decimal(10, 2) @default(0)
+  loyaltyPointsEarned Int      @default(0)
+  loyaltyPointsUsed   Int      @default(0)
+
+  restaurant Restaurant       @relation(fields: [restaurantId], references: [id], onDelete: Cascade)
+  customer   Customer?        @relation(fields: [customerId], references: [id])
+  table      RestaurantTable? @relation(fields: [tableId], references: [id])
+  coupon     Coupon?          @relation(fields: [couponId], references: [id])
+  items      OrderItem[]
+  payment    Payment?
+  review     Review?
+  adjustments OrderAdjustment[]
+
+  @@unique([restaurantId, orderNumber])
+  @@index([restaurantId, createdAt])
+  @@index([restaurantId, status])
+  @@map("orders")
+}
+
+model OrderAdjustment {
+  id              String                @id @default(cuid())
+  restaurantId    String
+  orderId         String
+  createdByUserId String?
+  amount          Decimal               @db.Decimal(10, 2)
+  reason          String?
+  status          OrderAdjustmentStatus @default(PENDING)
+  createdAt       DateTime              @default(now())
+
+  restaurant Restaurant @relation(fields: [restaurantId], references: [id], onDelete: Cascade)
+  order      Order      @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  createdBy  User?      @relation("OrderAdjustmentsCreated", fields: [createdByUserId], references: [id])
+
+  @@index([restaurantId])
+  @@index([orderId])
+  @@index([restaurantId, status])
+  @@map("order_adjustments")
+}
+
+model OrderItem {
+  id                  String  @id @default(cuid())
+  orderId             String
+  productId           String
+  quantity            Int
+  // Snapshots â€” immutable at order time
+  productNameSnapshot String
+  unitPrice           Decimal @db.Decimal(10, 2)
+  notes               String?
+
+  order     Order              @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  product   Product            @relation(fields: [productId], references: [id])
+  modifiers OrderItemModifier[]
+
+  @@index([orderId])
+  @@map("order_items")
+}
+
+model OrderItemModifier {
+  id                   String  @id @default(cuid())
+  orderItemId          String
+  modifierId           String
+  // Snapshots â€” immutable at order time
+  modifierNameSnapshot String
+  price                Decimal @db.Decimal(10, 2)
+
+  orderItem OrderItem @relation(fields: [orderItemId], references: [id], onDelete: Cascade)
+  modifier  Modifier  @relation(fields: [modifierId], references: [id])
+
+  @@index([orderItemId])
+  @@map("order_item_modifiers")
+}
+
+model DeliveryZone {
+  id           String  @id @default(cuid())
+  restaurantId String
+  name         String
+  minOrder     Decimal @db.Decimal(10, 2) @default(0)
+  deliveryFee  Decimal @db.Decimal(10, 2) @default(0)
+  polygon      Json?   // GeoJSON polygon
+  isActive     Boolean @default(true)
+
+  restaurant Restaurant @relation(fields: [restaurantId], references: [id], onDelete: Cascade)
+
+  @@index([restaurantId])
+  @@map("delivery_zones")
+}
+
+model OpeningHour {
+  id                  String  @id @default(cuid())
+  restaurantId        String
+  dayOfWeek           Int     // 0=Sunday â€¦ 6=Saturday
+  openTime            String  // "09:00"
+  closeTime           String  // "22:00"
+  isClosed            Boolean @default(false)
+  // Delivery hours (if null, uses openTime/closeTime)
+  deliveryOpenTime    String?
+  deliveryCloseTime   String?
+  deliveryEnabled     Boolean @default(true)
+
+  restaurant Restaurant @relation(fields: [restaurantId], references: [id], onDelete: Cascade)
+
+  @@unique([restaurantId, dayOfWeek])
+  @@index([restaurantId])
+  @@map("opening_hours")
+}
+
+// â”€â”€â”€ DELIVERY CONFIGURATION â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+
+model RestaurantDeliverySettings {
+  id                   String   @id @default(cuid())
+  restaurantId         String   @unique
+  timezone             String   @default("Europe/Madrid") // IANA timezone
+  deliveryEnabled      Boolean  @default(true)
+  pickupEnabled        Boolean  @default(true)
+  deliveryPostalCodes  String[] @default([]) // accepted postal codes for delivery
+  deliveryFee          Decimal  @db.Decimal(10, 2) @default(0)
+  minOrderAmount       Decimal  @db.Decimal(10, 2) @default(0)
+  allowUnderMinOrder   Boolean  @default(false)
+  underMinFee          Decimal  @db.Decimal(10, 2) @default(0)
+  estimatedMinMinutes  Int      @default(30)
+  estimatedMaxMinutes  Int      @default(60)
+  acceptFutureOrders   Boolean  @default(false)
+  maxDaysInAdvance     Int      @default(0)
+  isManuallyOpen       Boolean  @default(true)  // manual override to close/open
+  createdAt            DateTime @default(now())
+  updatedAt            DateTime @updatedAt
+
+  restaurant Restaurant @relation(fields: [restaurantId], references: [id], onDelete: Cascade)
+
+  @@map("restaurant_delivery_settings")
+}
+
+model RestaurantHoliday {
+  id           String   @id @default(cuid())
+  restaurantId String
+  date         DateTime // date at midnight UTC
+  reason       String?
+  createdAt    DateTime @default(now())
+
+  restaurant Restaurant @relation(fields: [restaurantId], references: [id], onDelete: Cascade)
+
+  @@unique([restaurantId, date])
+  @@index([restaurantId])
+  @@map("restaurant_holidays")
+}
+
+// â”€â”€â”€ PAYMENTS â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+
+model Payment {
+  id             String        @id @default(cuid())
+  orderId        String        @unique
+  restaurantId   String
+  provider       PaymentProvider
+  amount         Decimal       @db.Decimal(10, 2)
+  status         PaymentStatus @default(PENDING)
+  // Redsys specific
+  redsysOrderId  String?
+  redsysResponse Json?
+  createdAt      DateTime      @default(now())
+  updatedAt      DateTime      @updatedAt
+
+  order      Order      @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  restaurant Restaurant @relation(fields: [restaurantId], references: [id])
+
+  @@index([restaurantId])
+  @@map("payments")
+}
+
+model RestaurantPaymentSettings {
+  id                 String             @id @default(cuid())
+  restaurantId       String             @unique
+  provider           PaymentProvider    @default(REDSYS)
+  merchantCode       String
+  terminal           String             @default("1")
+  // AES-256-GCM encrypted â€” NEVER stored in plain text
+  secretKeyEncrypted String
+  environment        PaymentEnvironment @default(SANDBOX)
+  enableBizum        Boolean            @default(false)
+  active             Boolean            @default(false)
+  createdAt          DateTime           @default(now())
+  updatedAt          DateTime           @updatedAt
+
+  restaurant Restaurant @relation(fields: [restaurantId], references: [id], onDelete: Cascade)
+
+  @@map("restaurant_payment_settings")
+}
+
+model Review {
+  id           String   @id @default(cuid())
+  restaurantId String
+  customerId   String?
+  orderId      String?  @unique
+  rating       Int      @default(5) // 1 a 5
+  comment      String?  @db.Text
+  images       String[] @default([]) // URLs de fotos de los platos
+  customerName String?  // Nombre a mostrar (ej: "Juan P.")
+  isVisible    Boolean  @default(true)
+  isFeatured   Boolean  @default(false)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  restaurant Restaurant @relation(fields: [restaurantId], references: [id], onDelete: Cascade)
+  customer   Customer?  @relation(fields: [customerId], references: [id])
+  order      Order?     @relation(fields: [orderId], references: [id])
+
+  @@index([restaurantId, createdAt])
+  @@index([restaurantId, rating])
+  @@map("reviews")
+}
+
+model Room {
+  id           String   @id @default(cuid())
+  restaurantId String
+  name         String
+  width        Int      @default(800)
+  height       Int      @default(600)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  restaurant   Restaurant        @relation(fields: [restaurantId], references: [id], onDelete: Cascade)
+  tables       RestaurantTable[]
+
+  @@unique([restaurantId, name])
+  @@index([restaurantId])
+  @@map("rooms")
+}
+
+model RestaurantTable {
+  id           String   @id @default(cuid())
+  restaurantId String
+  roomId       String?
+  name         String
+  isActive     Boolean  @default(true)
+  
+  // Spatial properties for visual editor
+  x            Float    @default(0)
+  y            Float    @default(0)
+  width        Float    @default(80)
+  height       Float    @default(80)
+  shape        String   @default("square") // square, round, rectangle
+  
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  restaurant Restaurant @relation(fields: [restaurantId], references: [id], onDelete: Cascade)
+  room       Room?      @relation(fields: [roomId], references: [id], onDelete: Cascade)
+  orders     Order[]
+
+  @@unique([restaurantId, name])
+  @@index([restaurantId])
+  @@index([roomId])
+  @@map("restaurant_tables")
+}
+
+// â”€â”€â”€ MARKETING & PROMOTIONS â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+
+enum DiscountType {
+  PERCENTAGE
+  FIXED_AMOUNT
+  FREE_PRODUCT
+}
+
+model Coupon {
+  id               String       @id @default(cuid())
+  restaurantId     String
+  code             String
+  discountType     DiscountType @default(PERCENTAGE)
+  discountValue    Decimal      @db.Decimal(10, 2)
+  minOrderAmount   Decimal?     @db.Decimal(10, 2)
+  maxUses          Int?
+  usesCount        Int          @default(0)
+  expiresAt        DateTime?
+  freeProductId    String?      // Si el cupÃ³n regala un producto base
+  validCategoryIds String[]     @default([]) // Si estÃ¡ vacÃ­o, aplica a todo
+  validProductIds  String[]     @default([]) // Si estÃ¡ vacÃ­o, aplica a todo
+  active           Boolean      @default(true)
+  createdAt        DateTime     @default(now())
+  updatedAt        DateTime     @updatedAt
+
+  restaurant Restaurant @relation(fields: [restaurantId], references: [id], onDelete: Cascade)
+  product    Product?   @relation("CouponFreeProduct", fields: [freeProductId], references: [id])
+  orders     Order[]
+
+  @@unique([restaurantId, code])
+  @@index([restaurantId])
+  @@map("coupons")
+}

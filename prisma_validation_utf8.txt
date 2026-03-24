@@ -1,0 +1,19 @@
+﻿node.exe : Loaded Prisma config from 
+prisma.config.ts.
+En línea: 1 Carácter: 1
++ & "C:\Program Files\nodejs/node.exe" 
+"C:\Program Files\nodejs/node_mo ...
++ ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified 
+   : (Loaded Prisma c...isma.config.ts.:S  
+  tring) [], RemoteException
+    + FullyQualifiedErrorId : NativeComman 
+   dError
+ 
+
+Error: Could not load schema from `C:\AntiG
+ravity\proyectos\ZasFood\zasfood-app\prisma
+\schema.prisma` provided by 
+"prisma.config.ts"`: file or directory not 
+found
