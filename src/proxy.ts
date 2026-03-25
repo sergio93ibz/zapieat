@@ -7,7 +7,6 @@
  */
 
 import { NextRequest, NextResponse } from "next/server"
-import { getToken } from "next-auth/jwt"
 
 type TenantInfo = {
   id: string
@@ -16,18 +15,6 @@ type TenantInfo = {
   name: string
   logoUrl: string | null
 }
-
-// Routes that require authentication
-const PROTECTED_PATTERNS = [
-  /^\/dashboard(\/.*)?$/,
-  /^\/orders(\/.*)?$/,
-  /^\/menu(\/.*)?$/,
-  /^\/settings(\/.*)?$/,
-  /^\/superadmin(\/.*)?$/,
-]
-
-// Routes only accessible by superadmin
-const SUPERADMIN_PATTERNS = [/^\/superadmin(\/.*)?$/]
 
 // Routes that should be excluded from proxy logic
 const BYPASS_PATHS = [
@@ -57,7 +44,15 @@ function isAdminHost(host: string): boolean {
 }
 
 async function resolveTenant(request: NextRequest, host: string): Promise<TenantInfo | null> {
-  const url = new URL("/api/tenancy/resolve", request.url)
+  // IMPORTANT: In production we sit behind Nginx TLS termination.
+  // Some runtimes may report request.url as https://..., but the app server only
+  // listens on plain HTTP (port 3000). Build the resolver URL explicitly.
+  const resolverOrigin =
+    process.env.TENANCY_RESOLVER_ORIGIN ??
+    // Fallback to the request origin (works in local dev)
+    request.nextUrl.origin
+
+  const url = new URL("/api/tenancy/resolve", resolverOrigin)
   url.searchParams.set("domain", host)
 
   const res = await fetch(url, {
@@ -83,26 +78,6 @@ export async function proxy(request: NextRequest) {
 
   const hostHeader = request.headers.get("host") ?? ""
   const host = normalizeHost(hostHeader)
-
-  // ── Superadmin auth guard ────────────────────────────────────
-  if (SUPERADMIN_PATTERNS.some((p) => p.test(pathname))) {
-    const token = await getToken({ req: request, secret: process.env.AUTH_SECRET })
-    if (!token) return NextResponse.redirect(new URL("/login", request.url))
-    if (!(token as any).isSuperadmin) {
-      return NextResponse.redirect(new URL("/dashboard", request.url))
-    }
-    return NextResponse.next()
-  }
-
-  // ── General auth guard ───────────────────────────────────────
-  if (PROTECTED_PATTERNS.some((p) => p.test(pathname))) {
-    const token = await getToken({ req: request, secret: process.env.AUTH_SECRET })
-    if (!token) {
-      const loginUrl = new URL("/login", request.url)
-      loginUrl.searchParams.set("callbackUrl", pathname)
-      return NextResponse.redirect(loginUrl)
-    }
-  }
 
   // ── Tenant resolution (only for non-admin hosts) ─────────────
   if (!isAdminHost(host)) {
