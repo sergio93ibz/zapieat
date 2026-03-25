@@ -40,10 +40,23 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
             limit: 10,
             windowSeconds: 15 * 60,
           })
-          if (!rl.ok) return null
+          if (!rl.ok) {
+            console.warn("[Auth] rateLimit blocked", {
+              ip,
+              remaining: rl.remaining,
+              resetSeconds: rl.resetSeconds,
+            })
+            return null
+          }
 
           const parsed = loginSchema.safeParse(credentials)
-          if (!parsed.success) return null
+          if (!parsed.success) {
+            console.warn("[Auth] invalid credentials payload", {
+              ip,
+              issues: parsed.error.issues.map((i) => ({ path: i.path, code: i.code })),
+            })
+            return null
+          }
 
           const { email, password } = parsed.data
 
@@ -51,10 +64,16 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
             where: { email },
           })
 
-          if (!user) return null
+          if (!user) {
+            console.warn("[Auth] user not found", { email })
+            return null
+          }
 
           const passwordMatch = await bcrypt.compare(password, user.passwordHash)
-          if (!passwordMatch) return null
+          if (!passwordMatch) {
+            console.warn("[Auth] password mismatch", { email })
+            return null
+          }
 
           // Resolve restaurantId and slug for non-superadmin users
           let restaurantId: string | null = null
